@@ -6,12 +6,14 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models/aliyun_h5_liveness_method.dart';
 import '../models/baidu_h5_liveness_method.dart';
+import '../models/finauth_h5_liveness_method.dart';
 import '../models/face_verification_result.dart';
 import '../models/verification_metrics.dart';
 import '../services/face_verification_provider.dart';
 import '../services/aliyun/aliyun_face_verification_response_parser.dart';
 import '../services/aliyun/aliyun_face_verification_service.dart';
 import '../services/baidu/baidu_face_verification_service.dart';
+import '../services/finauth/finauth_face_verification_service.dart';
 import '../services/tencent/tencent_ekyc_bridge.dart';
 import '../services/tencent/tencent_face_id_service.dart';
 import '../services/tencent/tencent_h5_service.dart';
@@ -41,12 +43,14 @@ class _VerificationScreenState extends State<VerificationScreen>
     TencentFaceIdService(),
     BaiduFaceVerificationService(),
     AliyunFaceVerificationService(),
+    FinAuthFaceVerificationService(),
   ];
 
   FaceVerificationProvider? _selectedProvider;
   VerificationFlow _flow = VerificationFlow.pureApi;
   BaiduH5LivenessMethod _baiduH5Method = BaiduH5LivenessMethod.dazzlePupil;
   AliyunH5LivenessMethod _aliyunH5Method = AliyunH5LivenessMethod.defaultMethod;
+  FinAuthH5LivenessMethod _finAuthH5Method = FinAuthH5LivenessMethod.flash;
   Uint8List? _referenceImageBytes;
   Uint8List? _liveVideoBytes;
   String? _sdkToken;
@@ -69,6 +73,7 @@ class _VerificationScreenState extends State<VerificationScreen>
 
   late final TabController _baiduH5TabController;
   late final TabController _aliyunH5TabController;
+  late final TabController _finAuthH5TabController;
 
   @override
   void initState() {
@@ -81,6 +86,10 @@ class _VerificationScreenState extends State<VerificationScreen>
       length: AliyunH5LivenessMethod.all.length,
       vsync: this,
     );
+    _finAuthH5TabController = TabController(
+      length: FinAuthH5LivenessMethod.all.length,
+      vsync: this,
+    );
     _selectedProvider = _providers.first;
     _loadEkycAvailability();
   }
@@ -91,6 +100,7 @@ class _VerificationScreenState extends State<VerificationScreen>
     _aliyunWatchdogTimer?.cancel();
     _baiduH5TabController.dispose();
     _aliyunH5TabController.dispose();
+    _finAuthH5TabController.dispose();
     super.dispose();
   }
 
@@ -105,19 +115,26 @@ class _VerificationScreenState extends State<VerificationScreen>
   bool get _isAliyunSelected =>
       _selectedProvider is AliyunFaceVerificationService;
 
-  bool get _supportsNativeSdk => !_isBaiduSelected && !_isAliyunSelected;
+  bool get _isFinAuthSelected =>
+      _selectedProvider is FinAuthFaceVerificationService;
 
-  bool get _supportsPureApi => !_isAliyunSelected;
+  bool get _supportsNativeSdk =>
+      !_isBaiduSelected && !_isAliyunSelected && !_isFinAuthSelected;
+
+  bool get _supportsPureApi => !_isAliyunSelected && !_isFinAuthSelected;
 
   String get _h5RedirectUrl {
     if (_isBaiduSelected) return AppConfig.baiduFaceprintH5CallbackUrl;
     if (_isAliyunSelected) return AppConfig.aliyunCloudAuthReturnUrl;
+    if (_isFinAuthSelected) return AppConfig.finauthH5ReturnUrl;
     return AppConfig.tencentFaceIdH5RedirectUrl;
   }
 
-  H5CallbackStyle get _h5CallbackStyle => _isAliyunSelected
-      ? H5CallbackStyle.aliyunResponse
-      : H5CallbackStyle.tencentToken;
+  H5CallbackStyle get _h5CallbackStyle {
+    if (_isAliyunSelected) return H5CallbackStyle.aliyunResponse;
+    if (_isFinAuthSelected) return H5CallbackStyle.finauthBizId;
+    return H5CallbackStyle.tencentToken;
+  }
 
   bool get _showCredentialsWarning {
     final provider = _selectedProvider;
@@ -180,6 +197,19 @@ class _VerificationScreenState extends State<VerificationScreen>
     }
     setState(() {
       _aliyunH5Method = method;
+      _result = null;
+      _resetH5SessionState();
+    });
+  }
+
+  void _onFinAuthH5MethodChanged(FinAuthH5LivenessMethod method) {
+    if (_finAuthH5Method == method) return;
+    final index = FinAuthH5LivenessMethod.all.indexOf(method);
+    if (index >= 0 && _finAuthH5TabController.index != index) {
+      _finAuthH5TabController.index = index;
+    }
+    setState(() {
+      _finAuthH5Method = method;
       _result = null;
       _resetH5SessionState();
     });
@@ -544,6 +574,12 @@ class _VerificationScreenState extends State<VerificationScreen>
         );
         _stopAliyunWatchdog();
         _stopAliyunWaitTimer();
+      } else if (provider is FinAuthFaceVerificationService) {
+        _setLoading(true, reason: 'finauth_h5_session');
+        sessionResult = await provider.requestH5Session(
+          referenceImageBytes: reference!,
+          procedureType: _finAuthH5Method.procedureType,
+        );
       } else {
         return;
       }
@@ -769,6 +805,8 @@ class _VerificationScreenState extends State<VerificationScreen>
           'Add BAIDU_API_KEY and BAIDU_SECRET_KEY to .env first.',
         AliyunFaceVerificationService() =>
           'Add ALIYUN_ACCESS_KEY_ID, ALIYUN_ACCESS_KEY_SECRET, and ALIYUN_CLOUDAUTH_SCENE_ID to .env first.',
+        FinAuthFaceVerificationService() =>
+          'Add FINAUTH_API_KEY and FINAUTH_API_SECRET to .env first.',
         _ =>
           'Add TENCENT_SECRET_ID and TENCENT_SECRET_KEY to .env first.',
       };
@@ -814,6 +852,8 @@ class _VerificationScreenState extends State<VerificationScreen>
           _setAliyunDebugStep(
             result.success ? 'Verification complete' : 'DescribeFaceVerify failed',
           );
+        } else if (provider is FinAuthFaceVerificationService) {
+          result = await provider.fetchH5VerificationResult(bizId: token);
         } else {
           _showMessage('H5 flow is not supported for this provider.', isError: true);
           return;
@@ -941,6 +981,10 @@ class _VerificationScreenState extends State<VerificationScreen>
             const SizedBox(height: 12),
             _buildAliyunH5MethodTabs(),
           ],
+          if (_isFinAuthSelected && _flow == VerificationFlow.saasH5) ...[
+            const SizedBox(height: 12),
+            _buildFinAuthH5MethodTabs(),
+          ],
           const SizedBox(height: 12),
           if (provider != null && _showCredentialsWarning) _buildCredentialsWarning(),
           if (_statusMessage != null) ...[
@@ -1027,6 +1071,8 @@ class _VerificationScreenState extends State<VerificationScreen>
                       ? '${_aliyunH5Method.label} · Model ${_aliyunH5Method.model} · '
                           'MetaInfo WebView (or env override), InitFaceVerify with '
                           '${_aliyunUsesFaceContrastPictureUrl ? "FaceContrastPictureUrl" : "base64 photo"}.'
+                      : _isFinAuthSelected
+                          ? '${_finAuthH5Method.label} · get_token with image_ref1.'
                       : 'Calls ApplyWebVerificationBizTokenIntl with your reference photo.',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1047,7 +1093,9 @@ class _VerificationScreenState extends State<VerificationScreen>
                           ? 'verify_token: $_sdkToken'
                           : _isAliyunSelected
                               ? 'CertifyId: $_sdkToken'
-                              : 'BizToken: $_sdkToken',
+                              : _isFinAuthSelected
+                                  ? 'biz_id: $_sdkToken'
+                                  : 'BizToken: $_sdkToken',
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
@@ -1079,6 +1127,8 @@ class _VerificationScreenState extends State<VerificationScreen>
                   ? 'Opens Baidu faceprint H5 (brain.baidu.com). Completion detected via callback ?token=.'
                   : _isAliyunSelected
                       ? 'Opens Aliyun CertifyUrl in WebView. Completion detected via ReturnUrl ?response=.'
+                      : _isFinAuthSelected
+                          ? 'Opens FinAuth DoVerification H5. Completion detected via return_url ?biz_id=.'
                       : 'Opens Tencent H5 liveness page. Completion detected via RedirectURL?token=.',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1393,6 +1443,15 @@ class _VerificationScreenState extends State<VerificationScreen>
                       _aliyunH5TabController.index = defaultIndex;
                     }
                   }
+                  if (value is FinAuthFaceVerificationService) {
+                    _flow = VerificationFlow.saasH5;
+                    _finAuthH5Method = FinAuthH5LivenessMethod.fromEnv();
+                    final defaultIndex =
+                        FinAuthH5LivenessMethod.all.indexOf(_finAuthH5Method);
+                    if (defaultIndex >= 0) {
+                      _finAuthH5TabController.index = defaultIndex;
+                    }
+                  }
                   _result = null;
                   _liveVideoBytes = null;
                   _resetH5SessionState();
@@ -1517,6 +1576,61 @@ class _VerificationScreenState extends State<VerificationScreen>
     );
   }
 
+  Widget _buildFinAuthH5MethodTabs() {
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('H5 liveness method', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'get_token procedure_type for FinAuth H5 Lite overseas.',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            TabBar(
+              controller: _finAuthH5TabController,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              labelColor: theme.colorScheme.primary,
+              unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+              indicatorColor: theme.colorScheme.primary,
+              dividerColor: Colors.transparent,
+              onTap: (index) =>
+                  _onFinAuthH5MethodChanged(FinAuthH5LivenessMethod.all[index]),
+              tabs: [
+                for (final method in FinAuthH5LivenessMethod.all)
+                  Tab(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(method.tabLabel),
+                        Text(
+                          method.procedureType,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontSize: 9,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Selected: ${_finAuthH5Method.label}',
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _verificationStepSubtitle() {
     if (_isBaiduSelected && _flow == VerificationFlow.pureApi) {
       return 'Video liveness on live clip, then 1:1 match vs reference (threshold ${AppConfig.baiduMatchThreshold.toStringAsFixed(0)}).';
@@ -1526,6 +1640,9 @@ class _VerificationScreenState extends State<VerificationScreen>
     }
     if (_isAliyunSelected && _flow == VerificationFlow.saasH5) {
       return '${_aliyunH5Method.label} · polls DescribeFaceVerify after WebView.';
+    }
+    if (_isFinAuthSelected && _flow == VerificationFlow.saasH5) {
+      return '${_finAuthH5Method.label} · polls get_result after WebView (threshold ${AppConfig.finauthMatchThresholdKey}).';
     }
     if (_flow == VerificationFlow.pureApi) {
       return 'Calls CompareFaceLiveness (intl) or LivenessCompare (domestic).';
@@ -1593,6 +1710,8 @@ class _VerificationScreenState extends State<VerificationScreen>
         'Baidu credentials missing. Set BAIDU_API_KEY and BAIDU_SECRET_KEY in .env.',
       AliyunFaceVerificationService() =>
         'Aliyun credentials missing. Set ALIYUN_ACCESS_KEY_ID, ALIYUN_ACCESS_KEY_SECRET, and ALIYUN_CLOUDAUTH_SCENE_ID in .env.',
+      FinAuthFaceVerificationService() =>
+        'FinAuth credentials missing. Set FINAUTH_API_KEY and FINAUTH_API_SECRET in .env.',
       _ =>
         'Tencent credentials missing. Copy .env.example to .env and add your SecretId/SecretKey.',
     };

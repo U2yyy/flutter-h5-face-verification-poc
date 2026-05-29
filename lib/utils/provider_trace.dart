@@ -17,8 +17,11 @@ class ProviderTrace {
     'LivenessData',
     'video_base64',
     'image',
+    'image_ref1',
+    'image_ref2',
     'FaceContrastPicture',
     'MetaInfo',
+    'api_secret',
   };
 
   static const largeValuePreviewThreshold = 512;

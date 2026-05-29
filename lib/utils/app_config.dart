@@ -190,4 +190,72 @@ class AppConfig {
   /// When true, logs the full local `stringToSign` in AliyunTrace request JSON.
   static bool get aliyunLogStringToSign =>
       _env('ALIYUN_LOG_STRING_TO_SIGN', 'false').toLowerCase() == 'true';
+
+  // --- Megvii FinAuth H5 Lite (overseas) ---
+
+  static String get finauthApiKey => _env('FINAUTH_API_KEY');
+
+  static String get finauthApiSecret => _env('FINAUTH_API_SECRET');
+
+  /// Overseas API host (default api-global.yljz.com). Regional hosts may differ.
+  static String get finauthApiHost =>
+      _env('FINAUTH_API_HOST', 'api-global.yljz.com');
+
+  /// DoVerification base URL (GET ?token=). Default matches overseas docs.
+  static String get finauthDoVerificationBase => _env(
+        'FINAUTH_DO_VERIFICATION_BASE',
+        'https://api-global.yljz.com/finauth/lite/do',
+      );
+
+  /// return_url — FinAuth redirects here after H5 liveness (GET appends ?biz_id=).
+  static String get finauthH5ReturnUrl => _env(
+        'FINAUTH_H5_RETURN_URL',
+        'https://facedetection.local/finauth/h5/callback',
+      );
+
+  /// notify_url — required by get_token (server POST callback; not used in-app POC).
+  static String get finauthNotifyUrl => _env(
+        'FINAUTH_NOTIFY_URL',
+        'https://facedetection.local/finauth/notify',
+      );
+
+  /// Optional console scene_id for H5 theme / flow config.
+  static String get finauthSceneId => _env('FINAUTH_SCENE_ID');
+
+  /// User uuid for get_token (comparison_type=0 or -1).
+  static String get finauthUserUuid =>
+      _env('FINAUTH_USER_UUID', 'facedetection-demo-user');
+
+  /// Face compare (0) or liveness-only (-1).
+  static String get finauthComparisonType =>
+      _env('FINAUTH_COMPARISON_TYPE', '0');
+
+  /// flash, distance, or still.
+  static String get finauthProcedureType =>
+      _env('FINAUTH_PROCEDURE_TYPE', 'flash');
+
+  static String get finauthProcedurePriority =>
+      _env('FINAUTH_PROCEDURE_PRIORITY');
+
+  /// Page language: 0=en, 1=zh, 2=id, 3=th, etc.
+  static String get finauthLanguage => _env('FINAUTH_LANGUAGE', '0');
+
+  /// GET recommended for WebView callback detection (?biz_id=); POST returns form body.
+  static String get finauthActionHttpMethod =>
+      _env('FINAUTH_ACTION_HTTP_METHOD', 'GET');
+
+  /// redirect_type when action_http_method=GET (0 default, 1 replace history).
+  static String get finauthRedirectType => _env('FINAUTH_REDIRECT_TYPE');
+
+  /// fmp_mode: 0=include cloud anti-spoof in liveness_result; 1=scores only.
+  static String get finauthFmpMode => _env('FINAUTH_FMP_MODE', '0');
+
+  /// verify_result.result_ref1 confidence threshold key: 1e-3, 1e-4, 1e-5, 1e-6.
+  static String get finauthMatchThresholdKey =>
+      _env('FINAUTH_MATCH_THRESHOLD_KEY', '1e-4');
+
+  static bool get hasFinAuthCredentials =>
+      finauthApiKey.isNotEmpty && finauthApiSecret.isNotEmpty;
+
+  static bool get hasFinAuthH5Config => hasFinAuthCredentials;
 }

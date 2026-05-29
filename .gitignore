@@ -47,3 +47,4 @@ app.*.map.json
 # Secrets and local config
 .env
 *.env.local
+/人脸核身方案调研.md

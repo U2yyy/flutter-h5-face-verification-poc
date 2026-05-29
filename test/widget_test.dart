@@ -23,6 +23,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Aliyun CloudAuth'), findsOneWidget);
     expect(find.text('Baidu AI'), findsOneWidget);
+    expect(find.text('Megvii FinAuth'), findsOneWidget);
   });
 
   testWidgets('Baidu SaaS H5 shows four liveness method tabs',
@@ -59,6 +60,23 @@ void main() {
     expect(find.text('SaaS H5'), findsOneWidget);
     expect(find.text('静默'), findsOneWidget);
     expect(find.text('MOVE_ACTION'), findsOneWidget);
+    expect(find.text('Pure API'), findsNothing);
+  });
+
+  testWidgets('FinAuth SaaS H5 shows liveness procedure tabs',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const FaceDetectionApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(DropdownButtonFormField<FaceVerificationProvider>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Megvii FinAuth').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('SaaS H5'), findsOneWidget);
+    expect(find.text('flash'), findsOneWidget);
+    expect(find.text('distance'), findsOneWidget);
+    expect(find.text('still'), findsOneWidget);
     expect(find.text('Pure API'), findsNothing);
   });
 }

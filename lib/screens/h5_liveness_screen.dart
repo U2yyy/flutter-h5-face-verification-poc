@@ -5,11 +5,12 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:facedetection/services/aliyun/aliyun_h5_service.dart';
+import 'package:facedetection/services/finauth/finauth_h5_service.dart';
 import 'package:facedetection/services/tencent/tencent_h5_service.dart';
 import 'package:facedetection/utils/permission_utils.dart';
 import 'package:facedetection/utils/webview_platform_utils.dart';
 
-enum H5CallbackStyle { tencentToken, aliyunResponse }
+enum H5CallbackStyle { tencentToken, aliyunResponse, finauthBizId }
 
 /// Full-screen WebView for cloud H5 liveness verification.
 class H5LivenessScreen extends StatefulWidget {
@@ -196,6 +197,8 @@ class _H5LivenessScreenState extends State<H5LivenessScreen> {
         TencentH5CallbackParser.isCompletionRedirect(url, widget.redirectUrl),
       H5CallbackStyle.aliyunResponse =>
         AliyunH5CallbackParser.isCompletionRedirect(url, widget.redirectUrl),
+      H5CallbackStyle.finauthBizId =>
+        FinAuthH5CallbackParser.isCompletionRedirect(url, widget.redirectUrl),
     };
 
     if (!isComplete) return false;
@@ -206,6 +209,8 @@ class _H5LivenessScreenState extends State<H5LivenessScreen> {
         TencentH5CallbackParser.extractBizToken(url),
       H5CallbackStyle.aliyunResponse =>
         AliyunH5CallbackParser.extractCertifyId(url),
+      H5CallbackStyle.finauthBizId =>
+        FinAuthH5CallbackParser.extractBizId(url),
     };
 
     if (!mounted) return true;
@@ -220,6 +225,8 @@ class _H5LivenessScreenState extends State<H5LivenessScreen> {
                   'Redirect missing token query parameter',
                 H5CallbackStyle.aliyunResponse =>
                   'Redirect missing response/certifyId parameter',
+                H5CallbackStyle.finauthBizId =>
+                  'Redirect missing biz_id query parameter',
               }
             : null,
       ),

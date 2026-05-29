@@ -1,6 +1,6 @@
 # Face Verification Compare
 
-A Flutter app for comparing face **verification / liveness** APIs from multiple cloud providers. Integrates **Tencent Cloud FaceID (1061)**, **Baidu AI**, and **Aliyun CloudAuth PV_FV H5** with an extensible provider architecture.
+A Flutter app for comparing face **verification / liveness** APIs from multiple cloud providers. Integrates **Tencent Cloud FaceID (1061)**, **Baidu AI**, **Aliyun CloudAuth PV_FV H5**, and **Megvii FinAuth H5 Lite (overseas)** with an extensible provider architecture.
 
 > **Demo mode only — not production-safe**
 >
@@ -64,6 +64,18 @@ A Flutter app for comparing face **verification / liveness** APIs from multiple 
    | `ALIYUN_CLOUDAUTH_CERTIFY_URL_TYPE` | Optional `H5` to request `CertifyUrl` for WebView liveness |
    | `ALIYUN_CLOUDAUTH_USER_ID` | Custom UserId for InitFaceVerify |
    | `ALIYUN_MATCH_THRESHOLD` | verifyScore pass threshold (default `70`) |
+   | `FINAUTH_API_KEY` | FinAuth / Megvii API key |
+   | `FINAUTH_API_SECRET` | FinAuth API secret |
+   | `FINAUTH_API_HOST` | Overseas API host (default `api-global.yljz.com`) |
+   | `FINAUTH_DO_VERIFICATION_BASE` | H5 DoVerification URL base |
+   | `FINAUTH_H5_RETURN_URL` | return_url for WebView callback (`?biz_id=`) |
+   | `FINAUTH_NOTIFY_URL` | notify_url (required by get_token; server-side) |
+   | `FINAUTH_SCENE_ID` | Optional console scene_id |
+   | `FINAUTH_USER_UUID` | User uuid for get_token |
+   | `FINAUTH_COMPARISON_TYPE` | `0` face compare, `-1` liveness only |
+   | `FINAUTH_PROCEDURE_TYPE` | `flash`, `distance`, or `still` |
+   | `FINAUTH_ACTION_HTTP_METHOD` | `GET` (WebView) or `POST` for return_url |
+   | `FINAUTH_MATCH_THRESHOLD_KEY` | `1e-4` etc. from get_result thresholds |
 
    **Never commit `.env`** — it is listed in `.gitignore`.
 
@@ -87,7 +99,30 @@ The app declares `INTERNET`, `CAMERA`, `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, 
 
 ## Usage
 
-Select a **Provider** (Tencent FaceID, Baidu AI, or Aliyun CloudAuth), then follow the flow steps for your chosen integration.
+Select a **Provider** (Tencent FaceID, Baidu AI, Aliyun CloudAuth, or Megvii FinAuth), then follow the flow steps for your chosen integration.
+
+### Megvii FinAuth SaaS H5 Lite (overseas — liveness + face compare)
+
+1. Select **Megvii FinAuth** → automatically switches to **SaaS H5** flow.
+2. Pick a **liveness method** tab: 炫彩 (`flash`) / 距离 (`distance`) / 静默 (`still`).
+3. Upload reference photo → tap **Request H5 session** — calls `get_token` with `image_ref1` (multipart form-data).
+4. Tap **Start H5 Liveness** — opens `DoVerification` URL (`/finauth/lite/do?token=…`) in WebView.
+5. After `return_url` redirect (`?biz_id=`, with `FINAUTH_ACTION_HTTP_METHOD=GET`), **Run verification** → `get_result`.
+
+| Step | API | Host | Purpose |
+|------|-----|------|---------|
+| Session | `POST /finauth/lite/get_token` | `api-global.yljz.com` | Returns `token`, `biz_id`; uploads reference photo |
+| Liveness | `GET /finauth/lite/do?token=` | same | H5 liveness + 1:1 compare in WebView |
+| Callback | `return_url` / `notify_url` | your URL | Returns `biz_id` (GET query or POST form) |
+| Result | `GET /finauth/lite/get_result` | same | `status`, `liveness_result`, `verify_result` |
+
+**Pass criteria (per docs):** `status=OK` → `liveness_result.result=PASS` → `verify_result.result_ref1.confidence` ≥ `thresholds[FINAUTH_MATCH_THRESHOLD_KEY]`.
+
+> **Console setup:** Apply for FinAuth console account and `api_key`/`api_secret` via business contact. Optional `scene_id` in console → mobile H5 (lite) scene config.
+
+> **Docs:** [H5 接入指引 (overseas)](https://yljz.com/document/finauth-guide-docs/oversea_h5_access_guidence), [get_token](https://yljz.com/document/finauth-guide-docs/oversea_h5_get_token), [DoVerification](https://yljz.com/document/finauth-guide-docs/oversea_h5_do_verification), [get_result](https://yljz.com/document/finauth-guide-docs/oversea_h5_get_result), [return/notify callback](https://yljz.com/document/finauth-guide-docs/oversea_h5_return_notify_url)
+
+> **Doc gaps / POC notes:** Auth is plain `api_key` + `api_secret` (no HMAC signing for lite). `notify_url` is required by `get_token` but not consumed in-app — use a placeholder HTTPS URL. Regional DoVerification hosts (e.g. `api-idn.yljz.com` in some guides) may differ; override `FINAUTH_DO_VERIFICATION_BASE`. POST `return_url` callbacks (default `action_http_method=POST`) are harder to intercept in WebView — this POC defaults to `GET`. `get_result` is limited to **3 queries within 24h** per `biz_id`.
 
 ### Aliyun CloudAuth SaaS H5 (PV_FV — liveness + face contrast)
 
@@ -168,6 +203,7 @@ lib/
   models/
     baidu_h5_liveness_method.dart
     aliyun_h5_liveness_method.dart
+    finauth_h5_liveness_method.dart
     face_verification_result.dart
     verification_metrics.dart
   services/
@@ -183,6 +219,11 @@ lib/
       baidu_h5_service.dart          # H5 URL + callback helpers
       baidu_face_verification_service.dart
       baidu_face_verification_response_parser.dart
+    finauth/
+      finauth_api_client.dart        # get_token (multipart) + get_result
+      finauth_h5_service.dart        # DoVerification URL + biz_id callback
+      finauth_face_verification_service.dart
+      finauth_face_verification_response_parser.dart
     tencent/
       tencent_api_client.dart      # TC3-HMAC-SHA256 signed HTTP client
       tencent_ekyc_bridge.dart     # High-level bridge to native eKYC SDK
@@ -191,7 +232,7 @@ lib/
       tencent_face_id_response_parser.dart
   screens/
     verification_screen.dart
-    h5_liveness_screen.dart        # WebView for H5 liveness (Tencent/Baidu/Aliyun)
+    h5_liveness_screen.dart        # WebView for H5 liveness (Tencent/Baidu/Aliyun/FinAuth)
     live_capture_screen.dart       # In-app front-camera video capture
   utils/
     aliyun_metainfo_bootstrap.dart # MetaInfo WebView HTML + timing constants
@@ -379,7 +420,7 @@ flutter analyze
 flutter test
 ```
 
-API trace tags: `[AliyunTrace]`, `[TencentTrace]`, `[BaiduTrace]` — filter with `adb logcat -s flutter | grep Trace`.
+API trace tags: `[AliyunTrace]`, `[TencentTrace]`, `[BaiduTrace]`, `[FinAuthTrace]` — filter with `adb logcat -s flutter | grep Trace`.
 
 ## Getting Tencent Cloud Credentials
 
